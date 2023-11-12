@@ -24,14 +24,7 @@ class S2VGraph(object):
         self.max_neighbor = 0
 
 
-def load_data(dataset, degree_as_tag):
-    '''
-        dataset: name of dataset
-        test_proportion: ratio of test train split
-        seed: random seed for random splitting of dataset
-    '''
-
-    print('loading data')
+def load_graph_list_from_file(dataset):
     g_list = []
     label_dict = {}
     feat_dict = {}
@@ -81,7 +74,11 @@ def load_data(dataset, degree_as_tag):
 
             g_list.append(S2VGraph(g, l, node_tags))
 
-    #add labels and edge_mat       
+    return g_list, label_dict
+
+def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag):
+
+    #add labels and edge_mat
     for g in g_list:
         g.neighbors = [[] for i in range(len(g.g))]
         for i, j in g.g.edges():
@@ -105,7 +102,7 @@ def load_data(dataset, degree_as_tag):
         for g in g_list:
             g.node_tags = list(dict(g.g.degree).values())
 
-    #Extracting unique tag labels   
+    #Extracting unique tag labels
     tagset = set([])
     for g in g_list:
         tagset = tagset.union(set(g.node_tags))
@@ -125,9 +122,21 @@ def load_data(dataset, degree_as_tag):
 
     return g_list, len(label_dict)
 
-def separate_data(graph_list, seed, fold_idx):
-    assert 0 <= fold_idx and fold_idx < 10, "fold_idx must be from 0 to 9."
-    skf = StratifiedKFold(n_splits=10, shuffle = True, random_state = seed)
+def load_data(dataset, degree_as_tag):
+    '''
+        dataset: name of dataset
+        test_proportion: ratio of test train split
+        seed: random seed for random splitting of dataset
+    '''
+
+    print('loading data')
+    g_list, label_dict = load_graph_list_from_file(dataset)
+    return load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag)
+
+
+def separate_data(graph_list, seed, fold_idx, n_splits=10):
+    assert 0 <= fold_idx and fold_idx < n_splits, "fold_idx must be from 0 to 9."
+    skf = StratifiedKFold(n_splits=n_splits, shuffle = True, random_state = seed)
 
     labels = [graph.label for graph in graph_list]
     idx_list = []
