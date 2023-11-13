@@ -190,7 +190,7 @@ class GraphCNN(nn.Module):
         return h
 
 
-    def forward(self, batch_graph):
+    def get_hidden_rep_over_layers(self, batch_graph):
         X_concat = torch.cat([graph.node_features for graph in batch_graph], 0).to(self.device)
         graph_pool = self.__preprocess_graphpool(batch_graph)
 
@@ -199,21 +199,32 @@ class GraphCNN(nn.Module):
         else:
             Adj_block = self.__preprocess_neighbors_sumavepool(batch_graph)
 
-        #list of hidden representation at each layer (including input)
+        # list of hidden representation at each layer (including input)
         hidden_rep = [X_concat]
         h = X_concat
 
-        for layer in range(self.num_layers-1):
+        for layer in range(self.num_layers - 1):
             if self.neighbor_pooling_type == "max" and self.learn_eps:
-                h = self.next_layer_eps(h, layer, padded_neighbor_list = padded_neighbor_list)
+                h = self.next_layer_eps(h, layer, padded_neighbor_list=padded_neighbor_list)
             elif not self.neighbor_pooling_type == "max" and self.learn_eps:
-                h = self.next_layer_eps(h, layer, Adj_block = Adj_block)
+                h = self.next_layer_eps(h, layer, Adj_block=Adj_block)
             elif self.neighbor_pooling_type == "max" and not self.learn_eps:
-                h = self.next_layer(h, layer, padded_neighbor_list = padded_neighbor_list)
+                h = self.next_layer(h, layer, padded_neighbor_list=padded_neighbor_list)
             elif not self.neighbor_pooling_type == "max" and not self.learn_eps:
-                h = self.next_layer(h, layer, Adj_block = Adj_block)
+                h = self.next_layer(h, layer, Adj_block=Adj_block)
 
             hidden_rep.append(h)
+
+        return graph_pool, hidden_rep
+
+    def get_embedding(self, batch_graph):
+        graph_pool, hidden_rep = self.get_hidden_rep_over_layers(batch_graph)
+
+        pooled_h = torch.spmm(graph_pool, hidden_rep[-1])
+        return pooled_h
+
+    def forward(self, batch_graph):
+        graph_pool, hidden_rep = self.get_hidden_rep_over_layers(batch_graph)
 
         score_over_layer = 0
     
