@@ -20,7 +20,6 @@ class GraphCNN(nn.Module):
         '''
 
         super(GraphCNN, self).__init__()
-
         self.final_dropout = final_dropout
         self.device = device
         self.num_layers = num_layers
@@ -43,6 +42,8 @@ class GraphCNN(nn.Module):
 
             self.batch_norms.append(nn.BatchNorm1d(hidden_dim))
 
+        self.embedding_dim = hidden_dim
+
         #Linear function that maps the hidden representation at dofferemt layers into a prediction score
         self.linears_prediction = torch.nn.ModuleList()
         for layer in range(num_layers):
@@ -51,6 +52,8 @@ class GraphCNN(nn.Module):
             else:
                 self.linears_prediction.append(nn.Linear(hidden_dim, output_dim))
 
+    def get_embedding_dim(self):
+        return self.embedding_dim
 
     def __preprocess_neighbors_maxpool(self, batch_graph):
         ###create padded_neighbor_list in concatenated graph

@@ -76,7 +76,7 @@ def load_graph_list_from_file(dataset):
 
     return g_list, label_dict
 
-def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag):
+def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, print_stats=True):
 
     #add labels and edge_mat
     for g in g_list:
@@ -90,7 +90,8 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag):
             degree_list.append(len(g.neighbors[i]))
         g.max_neighbor = max(degree_list)
 
-        g.label = label_dict[g.label]
+        if g.label is not None:
+            g.label = label_dict[g.label]
 
         edges = [list(pair) for pair in g.g.edges()]
         edges.extend([[i, j] for j, i in edges])
@@ -114,11 +115,11 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag):
         g.node_features = torch.zeros(len(g.node_tags), len(tagset))
         g.node_features[range(len(g.node_tags)), [tag2index[tag] for tag in g.node_tags]] = 1
 
+    if print_stats:
+        print('# classes: %d' % len(label_dict))
+        print('# maximum node tag: %d' % len(tagset))
 
-    print('# classes: %d' % len(label_dict))
-    print('# maximum node tag: %d' % len(tagset))
-
-    print("# data: %d" % len(g_list))
+        print("# data: %d" % len(g_list))
 
     return g_list, len(label_dict)
 
