@@ -4,6 +4,9 @@ import random
 import torch
 from sklearn.model_selection import StratifiedKFold
 
+from common.graph_utils import relabel_graph_nodes_by_contiguous_order
+
+
 class S2VGraph(object):
     def __init__(self, g, label, node_tags=None, node_features=None):
         '''
@@ -22,6 +25,8 @@ class S2VGraph(object):
         self.edge_mat = 0
 
         self.max_neighbor = 0
+
+        self.g = relabel_graph_nodes_by_contiguous_order(g, copy=False)
 
 
 def load_graph_list_from_file(dataset):
@@ -81,9 +86,12 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, 
     #add labels and edge_mat
     for g in g_list:
         g.neighbors = [[] for i in range(len(g.g))]
+
+        # assuming contiguous order of node indices
         for i, j in g.g.edges():
             g.neighbors[i].append(j)
             g.neighbors[j].append(i)
+
         degree_list = []
         for i in range(len(g.g)):
             g.neighbors[i] = g.neighbors[i]
