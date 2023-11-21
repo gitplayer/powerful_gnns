@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from common.optimized_tensor_operations import jit_relu
 
 ###MLP with lienar output
+
+
 class MLP(nn.Module):
     def __init__(self, num_layers, input_dim, hidden_dim, output_dim):
         '''
@@ -45,5 +47,5 @@ class MLP(nn.Module):
             #If MLP
             h = x
             for layer in range(self.num_layers - 1):
-                h = F.relu(self.batch_norms[layer](self.linears[layer](h)))
+                h = jit_relu(self.batch_norms[layer](self.linears[layer](h)))
             return self.linears[self.num_layers - 1](h)

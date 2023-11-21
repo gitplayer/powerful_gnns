@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from common.optimized_tensor_operations import jit_relu
 from .mlp import MLP
 
 
@@ -164,7 +166,7 @@ class GraphCNN(nn.Module):
         h = self.batch_norms[layer](pooled_rep)
 
         #non-linearity
-        h = F.relu(h)
+        h = jit_relu(h)
         return h
 
 
@@ -188,7 +190,7 @@ class GraphCNN(nn.Module):
         h = self.batch_norms[layer](pooled_rep)
 
         #non-linearity
-        h = F.relu(h)
+        h = jit_relu(h)
         return h
 
 
