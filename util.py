@@ -81,7 +81,7 @@ def load_graph_list_from_file(dataset):
 
     return g_list, label_dict
 
-def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, print_stats=True):
+def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, device, print_stats=True):
 
     #add labels and edge_mat
     for g in g_list:
@@ -105,7 +105,7 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, 
         edges.extend([[i, j] for j, i in edges])
 
         deg_list = list(dict(g.g.degree(range(len(g.g)))).values())
-        g.edge_mat = torch.LongTensor(edges).transpose(0,1)
+        g.edge_mat = torch.LongTensor(edges).to(device=device).transpose(0,1)
 
     if degree_as_tag:
         for g in g_list:
@@ -120,7 +120,7 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, 
     tag2index = {tagset[i]:i for i in range(len(tagset))}
 
     for g in g_list:
-        g.node_features = torch.zeros(len(g.node_tags), len(tagset))
+        g.node_features = torch.zeros((len(g.node_tags), len(tagset)), device=device)
         g.node_features[range(len(g.node_tags)), [tag2index[tag] for tag in g.node_tags]] = 1
 
     if print_stats:
@@ -131,7 +131,7 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, 
 
     return g_list, len(label_dict)
 
-def load_data(dataset, degree_as_tag):
+def load_data(dataset, degree_as_tag, device="cpu"):
     '''
         dataset: name of dataset
         test_proportion: ratio of test train split
@@ -140,7 +140,7 @@ def load_data(dataset, degree_as_tag):
 
     print('loading data')
     g_list, label_dict = load_graph_list_from_file(dataset)
-    return load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag)
+    return load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, device=device)
 
 
 def separate_data(graph_list, seed, fold_idx, n_splits=10):

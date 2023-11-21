@@ -26,7 +26,7 @@ class GraphCNN(nn.Module):
         self.graph_pooling_type = graph_pooling_type
         self.neighbor_pooling_type = neighbor_pooling_type
         self.learn_eps = learn_eps
-        self.eps = nn.Parameter(torch.zeros(self.num_layers-1))
+        self.eps = nn.Parameter(torch.zeros(self.num_layers-1, device=self.device))
 
         ###List of MLPs
         self.mlps = torch.nn.ModuleList()
@@ -93,20 +93,20 @@ class GraphCNN(nn.Module):
             start_idx.append(start_idx[i] + len(graph.g))
             edge_mat_list.append(graph.edge_mat + start_idx[i])
         Adj_block_idx = torch.cat(edge_mat_list, 1)
-        Adj_block_elem = torch.ones(Adj_block_idx.shape[1])
+        Adj_block_elem = torch.ones(Adj_block_idx.shape[1], device=self.device)
 
         #Add self-loops in the adjacency matrix if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
 
         if not self.learn_eps:
             num_node = start_idx[-1]
-            self_loop_edge = torch.LongTensor([range(num_node), range(num_node)])
-            elem = torch.ones(num_node)
+            self_loop_edge = torch.tensor(([range(num_node), range(num_node)]), dtype=torch.long, device=self.device)
+            elem = torch.ones(num_node, device=self.device)
             Adj_block_idx = torch.cat([Adj_block_idx, self_loop_edge], 1)
             Adj_block_elem = torch.cat([Adj_block_elem, elem], 0)
 
         Adj_block = torch.sparse.FloatTensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]))
 
-        return Adj_block.to(self.device)
+        return Adj_block
 
 
     def __preprocess_graphpool(self, batch_graph):
@@ -130,20 +130,19 @@ class GraphCNN(nn.Module):
                 elem.extend([1]*len(graph.g))
 
             idx.extend([[i, j] for j in range(start_idx[i], start_idx[i+1], 1)])
-        elem = torch.FloatTensor(elem)
-        idx = torch.LongTensor(idx).transpose(0,1)
+        elem = torch.tensor(data=elem, dtype=torch.float32, device=self.device)
+        idx = torch.tensor(idx, dtype=torch.long, device=self.device).transpose(0,1)
         graph_pool = torch.sparse.FloatTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
         
-        return graph_pool.to(self.device)
+        return graph_pool
 
     def maxpool(self, h, padded_neighbor_list):
         ###Element-wise minimum will never affect max-pooling
 
         dummy = torch.min(h, dim = 0)[0]
-        h_with_dummy = torch.cat([h, dummy.reshape((1, -1)).to(self.device)])
+        h_with_dummy = torch.cat([h, dummy.reshape((1, -1))])
         pooled_rep = torch.max(h_with_dummy[padded_neighbor_list], dim = 1)[0]
         return pooled_rep
-
 
     def next_layer_eps(self, h, layer, padded_neighbor_list = None, Adj_block = None):
         ###pooling neighboring nodes and center nodes separately by epsilon reweighting. 
@@ -156,7 +155,7 @@ class GraphCNN(nn.Module):
             pooled = torch.spmm(Adj_block, h)
             if self.neighbor_pooling_type == "average":
                 #If average pooling
-                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1)).to(self.device))
+                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1), device=self.device))
                 pooled = pooled/degree
 
         #Reweights the center node representation when aggregating it with its neighbors
@@ -180,7 +179,7 @@ class GraphCNN(nn.Module):
             pooled = torch.spmm(Adj_block, h)
             if self.neighbor_pooling_type == "average":
                 #If average pooling
-                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1)).to(self.device))
+                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1), device=self.device))
                 pooled = pooled/degree
 
         #representation of neighboring and center nodes 
@@ -194,7 +193,7 @@ class GraphCNN(nn.Module):
 
 
     def get_hidden_rep_over_layers(self, batch_graph):
-        X_concat = torch.cat([graph.node_features for graph in batch_graph], 0).to(self.device)
+        X_concat = torch.cat([graph.node_features for graph in batch_graph], 0)
         graph_pool = self.__preprocess_graphpool(batch_graph)
 
         if self.neighbor_pooling_type == "max":
