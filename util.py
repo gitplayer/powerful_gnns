@@ -18,7 +18,6 @@ class S2VGraph(object):
             neighbors: list of neighbors (without self-loop)
         '''
         self.label = label
-        self.g = g
         self.node_tags = node_tags
         self.neighbors = []
         self.node_features = 0
