@@ -25,7 +25,7 @@ class S2VGraph(object):
 
         self.max_neighbor = 0
 
-        self.g = relabel_graph_nodes_by_contiguous_order(g, copy=False)
+        self.g = relabel_graph_nodes_by_contiguous_order(g, copy=True)
 
 
 def load_graph_list_from_file(dataset):
