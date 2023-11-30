@@ -274,7 +274,8 @@ class ParallelGraphCNN(nn.Module):
             output_device = device_ids[0]
 
         replicas = nn.parallel.replicate(module, device_ids)
-
+        replicas = [replica.to(device=device_id) for replica, device_id in zip(replicas, device_ids)]
+        
         # scatter input to devices
         input_indices = range(len(input))
         indices_split_by_device = np.array_split(input_indices, len(device_ids))
