@@ -27,6 +27,11 @@ class S2VGraph(object):
 
         self.g = relabel_graph_nodes_by_contiguous_order(g, copy=True)
 
+    def to(self, *args, **kwargs):
+        device, dtype, non_blocking, convert_to_format = torch._C._nn._parse_to(*args, **kwargs)
+        self.node_features = self.node_features.to(device=device)
+        self.edge_mat = self.edge_mat.to(device=device)
+
 
 def load_graph_list_from_file(dataset):
     g_list = []
