@@ -1,10 +1,9 @@
 from typing import TypeVar
+import math
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch._utils import _get_all_device_indices
-
 from common.optimized_tensor_operations import jit_relu
 from .mlp import MLP
 
@@ -104,7 +103,7 @@ class GraphCNN(nn.Module):
         for i, graph in enumerate(batch_graph):
             start_idx.append(start_idx[i] + len(graph.g))
             edge_mat_list.append(graph.edge_mat + start_idx[i])
-        Adj_block_idx = torch.cat(edge_mat_list, 1)
+        Adj_block_idx = torch.cat(edge_mat_list, 1).to(device=self.device)
         Adj_block_elem = torch.ones(Adj_block_idx.shape[1], device=self.device)
 
         #Add self-loops in the adjacency matrix if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
@@ -205,7 +204,7 @@ class GraphCNN(nn.Module):
 
 
     def get_hidden_rep_over_layers(self, batch_graph):
-        X_concat = torch.cat([graph.node_features for graph in batch_graph], 0)
+        X_concat = torch.cat([graph.node_features for graph in batch_graph], 0).to(self.device)
         graph_pool = self.__preprocess_graphpool(batch_graph)
 
         if self.neighbor_pooling_type == "max":
@@ -258,44 +257,57 @@ class GraphCNNEmbedding(nn.Module):
     def forward(self, batch_graph):
         return self.model.get_embedding(batch_graph)
 
+    def to(self, *args, **kwargs):
+        res = super().to(*args, **kwargs)
+        self.model = self.model.to(*args, **kwargs)
+        return res
+
 
 class ParallelGraphCNN(nn.Module):
-    def __init__(self, model: GraphCNN):
-        super().__init__()
-        self.model = nn.DataParallel(model)
-        self.embedding_model = GraphCNNEmbedding(model)
+    def __init__(self, model: GraphCNN, min_samples_per_batch, device_ids=None):
+        super().__init__()        
+        self.model = model
+        self.min_samples_per_batch = min_samples_per_batch
+        self.device_ids = device_ids
+        
+        if self.device_ids is None:
+          self.device_ids = _get_all_device_indices()
+        
+        self.embedding_model = GraphCNNEmbedding(self.model)  
 
-    @staticmethod
-    def data_parallel(module, input, device_ids, output_device=None):
+    def move_replicas_to_devices(self, module, n_replicas):
+        device_ids = self.device_ids[: n_replicas]
+        replicas = nn.parallel.replicate(module, device_ids)
+        replicas = [replica.to(device=device_id) for replica, device_id in zip(replicas, device_ids)]
+        return replicas             
+    
+    #TODO: optimize performance by using auto balancer, e.g. setting chunk size (only if batch size supported is big enough to justify it)
+    def data_parallel(self, input_graphs, output_device=None):
+        device_ids = self.device_ids        
         if not device_ids:
-            return module(input)
+            return self.embedding_model(input_graphs)
 
         if output_device is None:
             output_device = device_ids[0]
-
-        replicas = nn.parallel.replicate(module, device_ids)
-        replicas = [replica.to(device=device_id) for replica, device_id in zip(replicas, device_ids)]
         
         # scatter input to devices
-        input_indices = range(len(input))
-        indices_split_by_device = np.array_split(input_indices, len(device_ids))
-
-        inputs = []
-        for device_id, indices_split in zip(device_ids, indices_split_by_device):
-            device_inputs = [input[i] for i in indices_split]
-
-            for s2v_graph in device_inputs:
-                s2v_graph.to(device=device_id)
-            inputs.append([device_inputs])
-
-        replicas = replicas[:len(inputs)]
+        input_size = len(input_graphs)
+        n_devices = min(len(device_ids), math.ceil(input_size / self.min_samples_per_batch))
+        device_ids = device_ids[:n_devices]
+        
+        input_indices = range(input_size)
+        n_tasks = n_devices
+        indices_split_by_device = np.array_split(input_indices, n_tasks)
+        
+        inputs = [ [input_graphs[indices_split[0]: indices_split[-1] + 1]] for indices_split in indices_split_by_device] 
+        
+        replicas = self.move_replicas_to_devices(self.embedding_model, len(inputs))  
         outputs = nn.parallel.parallel_apply(replicas, inputs)
         return nn.parallel.gather(outputs, output_device)
+                                             
+    def get_embedding(self, batch_graph):
+        return self.data_parallel(batch_graph)
 
     # currently not optimized for multiple devices
-    def get_embedding(self, batch_graph):
-        return ParallelGraphCNN.data_parallel(self.embedding_model, batch_graph, _get_all_device_indices())
-        # return self.model.module.get_embedding(batch_graph)
-
     def forward(self, batch_graph):
         return self.model.forward(batch_graph)
