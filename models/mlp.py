@@ -6,7 +6,7 @@ from common.optimized_tensor_operations import jit_relu
 
 
 class MLP(nn.Module):
-    def __init__(self, num_layers, input_dim, hidden_dim, output_dim):
+    def __init__(self, num_layers, input_dim, hidden_dim, output_dim, device):
         '''
             num_layers: number of layers in the neural networks (EXCLUDING the input layer). If num_layers=1, this reduces to linear model.
             input_dim: dimensionality of input features
@@ -24,20 +24,20 @@ class MLP(nn.Module):
             raise ValueError("number of layers should be positive!")
         elif num_layers == 1:
             #Linear model
-            self.linear = nn.Linear(input_dim, output_dim)
+            self.linear = nn.Linear(input_dim, output_dim, device=device)
         else:
             #Multi-layer model
             self.linear_or_not = False
             self.linears = torch.nn.ModuleList()
             self.batch_norms = torch.nn.ModuleList()
         
-            self.linears.append(nn.Linear(input_dim, hidden_dim))
+            self.linears.append(nn.Linear(input_dim, hidden_dim, device=device))
             for layer in range(num_layers - 2):
-                self.linears.append(nn.Linear(hidden_dim, hidden_dim))
-            self.linears.append(nn.Linear(hidden_dim, output_dim))
+                self.linears.append(nn.Linear(hidden_dim, hidden_dim, device=device))
+            self.linears.append(nn.Linear(hidden_dim, output_dim, device=device))
 
             for layer in range(num_layers - 1):
-                self.batch_norms.append(nn.BatchNorm1d((hidden_dim)))
+                self.batch_norms.append(nn.BatchNorm1d((hidden_dim), device=device))
 
     def forward(self, x):
         if self.linear_or_not:

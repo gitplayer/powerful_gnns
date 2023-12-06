@@ -1,6 +1,4 @@
 from typing import TypeVar
-import math
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,12 +24,11 @@ class GraphCNN(nn.Module):
 
         super(GraphCNN, self).__init__()
         self.final_dropout = final_dropout
-        self.device = device
         self.num_layers = num_layers
         self.graph_pooling_type = graph_pooling_type
         self.neighbor_pooling_type = neighbor_pooling_type
         self.learn_eps = learn_eps
-        self.eps = nn.Parameter(torch.zeros(self.num_layers-1, device=self.device))
+        self.eps = nn.Parameter(torch.zeros(self.num_layers-1, device=device))
 
         ###List of MLPs
         self.mlps = torch.nn.ModuleList()
@@ -41,11 +38,11 @@ class GraphCNN(nn.Module):
 
         for layer in range(self.num_layers-1):
             if layer == 0:
-                self.mlps.append(MLP(num_mlp_layers, input_dim, hidden_dim, hidden_dim))
+                self.mlps.append(MLP(num_mlp_layers, input_dim, hidden_dim, hidden_dim, device=device))
             else:
-                self.mlps.append(MLP(num_mlp_layers, hidden_dim, hidden_dim, hidden_dim))
+                self.mlps.append(MLP(num_mlp_layers, hidden_dim, hidden_dim, hidden_dim, device=device))
 
-            self.batch_norms.append(nn.BatchNorm1d(hidden_dim))
+            self.batch_norms.append(nn.BatchNorm1d(hidden_dim, device=device))
 
         self.embedding_dim = hidden_dim
 
@@ -53,15 +50,22 @@ class GraphCNN(nn.Module):
         self.linears_prediction = torch.nn.ModuleList()
         for layer in range(num_layers):
             if layer == 0:
-                self.linears_prediction.append(nn.Linear(input_dim, output_dim))
+                self.linears_prediction.append(nn.Linear(input_dim, output_dim, device=device))
             else:
-                self.linears_prediction.append(nn.Linear(hidden_dim, output_dim))
+                self.linears_prediction.append(nn.Linear(hidden_dim, output_dim, device=device))
 
-    def to(self, *args, **kwargs):
-        res = super().to(*args, **kwargs)
-        device, dtype, non_blocking, convert_to_format = torch._C._nn._parse_to(*args, **kwargs)
-        self.device = device
-        return res
+    def get_device(self):
+        return self.eps.device
+
+    def move_buffers_to_device(self):
+        device = self.get_device()
+        for mlp in self.mlps:
+            for batch_norm in mlp.batch_norms:
+                batch_norm.running_mean = batch_norm.running_mean.to(device=device)
+                batch_norm.running_var = batch_norm.running_var.to(device=device)
+        for batch_norm in self.batch_norms:
+            batch_norm.running_mean = batch_norm.running_mean.to(device=device)
+            batch_norm.running_var = batch_norm.running_var.to(device=device)
 
     def get_embedding_dim(self):
         return self.embedding_dim
@@ -103,15 +107,15 @@ class GraphCNN(nn.Module):
         for i, graph in enumerate(batch_graph):
             start_idx.append(start_idx[i] + len(graph.g))
             edge_mat_list.append(graph.edge_mat + start_idx[i])
-        Adj_block_idx = torch.cat(edge_mat_list, 1).to(device=self.device)
-        Adj_block_elem = torch.ones(Adj_block_idx.shape[1], device=self.device)
+        Adj_block_idx = torch.cat(edge_mat_list, 1)
+        Adj_block_elem = torch.ones(Adj_block_idx.shape[1], device=self.get_device())
 
         #Add self-loops in the adjacency matrix if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
 
         if not self.learn_eps:
             num_node = start_idx[-1]
-            self_loop_edge = torch.tensor(([range(num_node), range(num_node)]), dtype=torch.long, device=self.device)
-            elem = torch.ones(num_node, device=self.device)
+            self_loop_edge = torch.tensor(([range(num_node), range(num_node)]), dtype=torch.long, device=self.get_device())
+            elem = torch.ones(num_node, device=self.get_device())
             Adj_block_idx = torch.cat([Adj_block_idx, self_loop_edge], 1)
             Adj_block_elem = torch.cat([Adj_block_elem, elem], 0)
 
@@ -141,8 +145,8 @@ class GraphCNN(nn.Module):
                 elem.extend([1]*len(graph.g))
 
             idx.extend([[i, j] for j in range(start_idx[i], start_idx[i+1], 1)])
-        elem = torch.tensor(data=elem, dtype=torch.float32, device=self.device)
-        idx = torch.tensor(idx, dtype=torch.long, device=self.device).transpose(0,1)
+        elem = torch.tensor(data=elem, dtype=torch.float32, device=self.get_device())
+        idx = torch.tensor(idx, dtype=torch.long, device=self.get_device()).transpose(0,1)
         graph_pool = torch.sparse.FloatTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
         
         return graph_pool
@@ -166,7 +170,7 @@ class GraphCNN(nn.Module):
             pooled = torch.spmm(Adj_block, h)
             if self.neighbor_pooling_type == "average":
                 #If average pooling
-                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1), device=self.device))
+                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1), device=self.get_device()))
                 pooled = pooled/degree
 
         #Reweights the center node representation when aggregating it with its neighbors
@@ -190,10 +194,10 @@ class GraphCNN(nn.Module):
             pooled = torch.spmm(Adj_block, h)
             if self.neighbor_pooling_type == "average":
                 #If average pooling
-                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1), device=self.device))
+                degree = torch.spmm(Adj_block, torch.ones((Adj_block.shape[0], 1), device=self.get_device()))
                 pooled = pooled/degree
 
-        #representation of neighboring and center nodes 
+        #representation of neighboring and center nodes
         pooled_rep = self.mlps[layer](pooled)
 
         h = self.batch_norms[layer](pooled_rep)
@@ -204,7 +208,7 @@ class GraphCNN(nn.Module):
 
 
     def get_hidden_rep_over_layers(self, batch_graph):
-        X_concat = torch.cat([graph.node_features for graph in batch_graph], 0).to(self.device)
+        X_concat = torch.cat([graph.node_features for graph in batch_graph], 0)
         graph_pool = self.__preprocess_graphpool(batch_graph)
 
         if self.neighbor_pooling_type == "max":
@@ -247,67 +251,3 @@ class GraphCNN(nn.Module):
             score_over_layer += F.dropout(self.linears_prediction[layer](pooled_h), self.final_dropout, training = self.training)
 
         return score_over_layer
-
-
-class GraphCNNEmbedding(nn.Module):
-    def __init__(self, model: GraphCNN):
-        super(GraphCNNEmbedding, self).__init__()
-        self.model = model
-
-    def forward(self, batch_graph):
-        return self.model.get_embedding(batch_graph)
-
-    def to(self, *args, **kwargs):
-        res = super().to(*args, **kwargs)
-        self.model = self.model.to(*args, **kwargs)
-        return res
-
-
-class ParallelGraphCNN(nn.Module):
-    def __init__(self, model: GraphCNN, min_samples_per_batch, device_ids=None):
-        super().__init__()        
-        self.model = model
-        self.min_samples_per_batch = min_samples_per_batch
-        self.device_ids = device_ids
-        
-        if self.device_ids is None:
-          self.device_ids = _get_all_device_indices()
-        
-        self.embedding_model = GraphCNNEmbedding(self.model)  
-
-    def move_replicas_to_devices(self, module, n_replicas):
-        device_ids = self.device_ids[: n_replicas]
-        replicas = nn.parallel.replicate(module, device_ids)
-        replicas = [replica.to(device=device_id) for replica, device_id in zip(replicas, device_ids)]
-        return replicas             
-    
-    #TODO: optimize performance by using auto balancer, e.g. setting chunk size (only if batch size supported is big enough to justify it)
-    def data_parallel(self, input_graphs, output_device=None):
-        device_ids = self.device_ids        
-        if not device_ids:
-            return self.embedding_model(input_graphs)
-
-        if output_device is None:
-            output_device = device_ids[0]
-        
-        # scatter input to devices
-        input_size = len(input_graphs)
-        n_devices = min(len(device_ids), math.ceil(input_size / self.min_samples_per_batch))
-        device_ids = device_ids[:n_devices]
-        
-        input_indices = range(input_size)
-        n_tasks = n_devices
-        indices_split_by_device = np.array_split(input_indices, n_tasks)
-        
-        inputs = [ [input_graphs[indices_split[0]: indices_split[-1] + 1]] for indices_split in indices_split_by_device] 
-        
-        replicas = self.move_replicas_to_devices(self.embedding_model, len(inputs))  
-        outputs = nn.parallel.parallel_apply(replicas, inputs)
-        return nn.parallel.gather(outputs, output_device)
-                                             
-    def get_embedding(self, batch_graph):
-        return self.data_parallel(batch_graph)
-
-    # currently not optimized for multiple devices
-    def forward(self, batch_graph):
-        return self.model.forward(batch_graph)
