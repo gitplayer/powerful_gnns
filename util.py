@@ -28,13 +28,13 @@ class S2VGraph(object):
         self.g = relabel_graph_nodes_by_contiguous_order(g, copy=True)
 
     def to(self, device, non_blocking):
-        node_features = self.node_features.to(device=device, non_blocking=non_blocking)
-        edge_mat = self.edge_mat.to(device=device, non_blocking=non_blocking)
+        self.node_features = self.node_features.to(device=device, non_blocking=non_blocking)
+        self.edge_mat = self.edge_mat.to(device=device, non_blocking=non_blocking)
 
-        new_graph = S2VGraph(self.g, self.label, self.node_tags, node_features)
-        new_graph.edge_mat = edge_mat
+        #new_graph = S2VGraph(self.g, self.label, self.node_tags, node_features)
+        #new_graph.edge_mat = edge_mat
 
-        return new_graph
+        #return new_graph
 
 
 def load_graph_list_from_file(dataset):
