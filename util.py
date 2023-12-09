@@ -20,17 +20,21 @@ class S2VGraph(object):
         self.label = label
         self.node_tags = node_tags
         self.neighbors = []
-        self.node_features = 0
-        self.edge_mat = 0
+        self.node_features = node_features
+        self.edge_mat = None
 
         self.max_neighbor = 0
 
         self.g = relabel_graph_nodes_by_contiguous_order(g, copy=True)
 
-    def to(self, *args, **kwargs):
-        device, dtype, non_blocking, convert_to_format = torch._C._nn._parse_to(*args, **kwargs)
-        self.node_features = self.node_features.to(device=device)
-        self.edge_mat = self.edge_mat.to(device=device)
+    def to(self, device, non_blocking):
+        node_features = self.node_features.to(device=device, non_blocking=non_blocking)
+        edge_mat = self.edge_mat.to(device=device, non_blocking=non_blocking)
+
+        new_graph = S2VGraph(self.g, self.label, self.node_tags, node_features)
+        new_graph.edge_mat = edge_mat
+
+        return new_graph
 
 
 def load_graph_list_from_file(dataset):
