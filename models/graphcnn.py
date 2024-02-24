@@ -100,6 +100,7 @@ class GraphCNN(nn.Module):
 
 
     def __preprocess_neighbors_sumavepool(self, batch_graph):
+        dtype = batch_graph[0].node_features.dtype
         ###create block diagonal sparse matrix
 
         edge_mat_list = []
@@ -108,7 +109,7 @@ class GraphCNN(nn.Module):
             start_idx.append(start_idx[i] + len(graph.g))
             edge_mat_list.append(graph.edge_mat + start_idx[i])
         Adj_block_idx = torch.cat(edge_mat_list, 1)
-        Adj_block_elem = torch.ones(Adj_block_idx.shape[1], device=self.get_device())
+        Adj_block_elem = torch.ones(Adj_block_idx.shape[1], device=self.get_device(), dtype=dtype)
 
         #Add self-loops in the adjacency matrix if learn_eps is False, i.e., aggregate center nodes and neighbor nodes altogether.
 
@@ -119,7 +120,10 @@ class GraphCNN(nn.Module):
             Adj_block_idx = torch.cat([Adj_block_idx, self_loop_edge], 1)
             Adj_block_elem = torch.cat([Adj_block_elem, elem], 0)
 
-        Adj_block = torch.sparse.FloatTensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]))
+        if dtype == torch.float32:
+            Adj_block = torch.sparse.FloatTensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]))
+        else:
+            Adj_block = torch.sparse.DoubleTensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]))
 
         return Adj_block
 
@@ -145,9 +149,15 @@ class GraphCNN(nn.Module):
                 elem.extend([1]*len(graph.g))
 
             idx.extend([[i, j] for j in range(start_idx[i], start_idx[i+1], 1)])
-        elem = torch.tensor(data=elem, dtype=torch.float32, device=self.get_device())
+
+        dtype = batch_graph[0].node_features.dtype
+        elem = torch.tensor(data=elem, dtype=dtype, device=self.get_device())
         idx = torch.tensor(idx, dtype=torch.long, device=self.get_device()).transpose(0,1)
-        graph_pool = torch.sparse.FloatTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
+
+        if dtype == torch.float32:
+            graph_pool = torch.sparse.FloatTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
+        else:
+            graph_pool = torch.sparse.DoubleTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
         
         return graph_pool
 
@@ -209,6 +219,8 @@ class GraphCNN(nn.Module):
 
     def get_hidden_rep_over_layers(self, batch_graph):
         X_concat = torch.cat([graph.node_features for graph in batch_graph], 0)
+        node_mask_concat = torch.cat([graph.node_mask for graph in batch_graph], 0)
+
         graph_pool = self.__preprocess_graphpool(batch_graph)
 
         if self.neighbor_pooling_type == "max":
@@ -217,8 +229,8 @@ class GraphCNN(nn.Module):
             Adj_block = self.__preprocess_neighbors_sumavepool(batch_graph)
 
         # list of hidden representation at each layer (including input)
-        hidden_rep = [X_concat]
-        h = X_concat
+        h = X_concat * node_mask_concat
+        hidden_rep = [h]
 
         for layer in range(self.num_layers - 1):
             if self.neighbor_pooling_type == "max" and self.learn_eps:
@@ -229,6 +241,10 @@ class GraphCNN(nn.Module):
                 h = self.next_layer(h, layer, padded_neighbor_list=padded_neighbor_list)
             elif not self.neighbor_pooling_type == "max" and not self.learn_eps:
                 h = self.next_layer(h, layer, Adj_block=Adj_block)
+
+            h = h * node_mask_concat # take into account node mask features
+            # need to cancel out the adj matrix edges where node_mask entries are 0
+            # (since even though the node feature is 0 (node does not exist), the adj matrix makes the gcn propogate values through it)
 
             hidden_rep.append(h)
 

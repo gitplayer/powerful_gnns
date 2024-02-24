@@ -5,22 +5,29 @@ import torch
 from sklearn.model_selection import StratifiedKFold
 
 from common.graph_utils import relabel_graph_nodes_by_contiguous_order
+from subgraph_matching_via_nn.utils.utils import TORCH_DTYPE
 
 
 class S2VGraph(object):
-    def __init__(self, g, label, node_tags=None, node_features=None):
+    def __init__(self, g, label, node_tags=None, node_features=None, node_mask=None):
         '''
             g: a networkx graph
             label: an integer graph label
             node_tags: a list of integer node tags
             node_features: a torch float tensor, one-hot representation of the tag that is used as input to neural nets
+            node_features: a torch float tensor, used as node mask
             edge_mat: a torch long tensor, contain edge list, will be used to create torch sparse tensor
             neighbors: list of neighbors (without self-loop)
         '''
         self.label = label
         self.node_tags = node_tags
         self.neighbors = []
+        if node_features is None:
+            node_features = torch.ones((len(g), 1), dtype=TORCH_DTYPE)
         self.node_features = node_features
+        if node_mask is None:
+            node_mask = torch.ones((len(g), 1), dtype=TORCH_DTYPE)
+        self.node_mask = node_mask
         self.edge_mat = None
 
         self.max_neighbor = 0
@@ -29,9 +36,10 @@ class S2VGraph(object):
 
     def to(self, device, non_blocking):
         self.node_features = self.node_features.to(device=device, non_blocking=non_blocking)
+        self.node_mask = self.node_mask.to(device=device, non_blocking=non_blocking)
         self.edge_mat = self.edge_mat.to(device=device, non_blocking=non_blocking)
 
-        #new_graph = S2VGraph(self.g, self.label, self.node_tags, node_features)
+        #new_graph = S2VGraph(self.g, self.label, self.node_tags, node_features, node_mask)
         #new_graph.edge_mat = edge_mat
 
         #return new_graph
@@ -127,9 +135,14 @@ def load_data_given_graph_list_and_label_map(g_list, label_dict, degree_as_tag, 
     tagset = list(tagset)
     tag2index = {tagset[i]:i for i in range(len(tagset))}
 
+    # This code causes issues, since when full graph and its subgraph embeddings are compared, the embedding relies on the node
+    # features to be identical, and not rely on the full graph tags
+    # for g in g_list:
+    #     g.node_features = torch.zeros((len(g.node_tags), len(tagset)), device=device, dtype=TORCH_DTYPE)
+    #     g.node_features[range(len(g.node_tags)), [tag2index[tag] for tag in g.node_tags]] = 1
     for g in g_list:
-        g.node_features = torch.zeros((len(g.node_tags), len(tagset)), device=device)
-        g.node_features[range(len(g.node_tags)), [tag2index[tag] for tag in g.node_tags]] = 1
+        g.node_features = g.node_features.to(device=device)
+        g.node_mask = g.node_mask.to(device=device)
 
     if print_stats:
         print('# classes: %d' % len(label_dict))
