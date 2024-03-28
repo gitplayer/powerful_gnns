@@ -120,10 +120,7 @@ class GraphCNN(nn.Module):
             Adj_block_idx = torch.cat([Adj_block_idx, self_loop_edge], 1)
             Adj_block_elem = torch.cat([Adj_block_elem, elem], 0)
 
-        if dtype == torch.float32:
-            Adj_block = torch.sparse.FloatTensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]))
-        else:
-            Adj_block = torch.sparse.DoubleTensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]))
+        Adj_block = torch.sparse_coo_tensor(Adj_block_idx, Adj_block_elem, torch.Size([start_idx[-1],start_idx[-1]]), dtype=dtype)
 
         return Adj_block
 
@@ -154,10 +151,7 @@ class GraphCNN(nn.Module):
         elem = torch.tensor(data=elem, dtype=dtype, device=self.get_device())
         idx = torch.tensor(idx, dtype=torch.long, device=self.get_device()).transpose(0,1)
 
-        if dtype == torch.float32:
-            graph_pool = torch.sparse.FloatTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
-        else:
-            graph_pool = torch.sparse.DoubleTensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]))
+        graph_pool = torch.sparse_coo_tensor(idx, elem, torch.Size([len(batch_graph), start_idx[-1]]), dtype=dtype)
         
         return graph_pool
 
