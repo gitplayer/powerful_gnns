@@ -7,6 +7,10 @@ from classifier_training import train, test
 from util import load_data, separate_data
 from models.graphcnn import GraphCNN
 
+# import pydevd_pycharm
+#
+# pydevd_pycharm.settrace('132.69.236.88', port=12345, stdoutToServer=True,
+#                         stderrToServer=True)
 
 def main():
     # Training settings
